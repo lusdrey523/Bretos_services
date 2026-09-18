@@ -1,5 +1,5 @@
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = url.pathname;
     const code = path.slice(1).toUpperCase().trim();
@@ -26,9 +26,15 @@ export default {
       const data = JSON.parse(raw);
 
       if (data.status === "configured" && data.reviewUrl) {
+        // Actualizar contador de forma segura
         data.scans = (data.scans || 0) + 1;
         data.lastUsed = new Date().toISOString();
-        env.DEVICES.put(code, JSON.stringify(data)).catch(() => {});
+
+        // Usar waitUntil para que el put no bloquee ni cause Error 1101
+        ctx.waitUntil(
+          env.DEVICES.put(code, JSON.stringify(data))
+        );
+
         return Response.redirect(data.reviewUrl, 302);
       }
 
@@ -37,6 +43,7 @@ export default {
         headers: { "Content-Type": "text/html; charset=utf-8" }
       });
     } catch (err) {
+      console.error("Redirect error:", err);
       return new Response(errorPage(), {
         status: 500,
         headers: { "Content-Type": "text/html; charset=utf-8" }
@@ -116,7 +123,7 @@ async function handleAdmin(request, env, path) {
     data.reviewUrl = reviewUrl || null;
     data.status = reviewUrl ? "configured" : "pending";
     data.updatedAt = new Date().toISOString();
-    if (!data.scans) data.scans = 0;
+    if (typeof data.scans !== "number") data.scans = 0;
 
     await env.DEVICES.put(deviceCode, JSON.stringify(data));
     return Response.redirect("/admin", 302);
