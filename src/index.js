@@ -16,6 +16,7 @@ export default {
 
     try {
       const raw = await env.DEVICES.get(code);
+
       if (!raw) {
         return new Response(notConfiguredPage(code), {
           status: 404,
@@ -23,25 +24,37 @@ export default {
         });
       }
 
-      const data = JSON.parse(raw);
+      let data;
+      try {
+        data = JSON.parse(raw);
+      } catch (e) {
+        return new Response(notConfiguredPage(code), {
+          status: 200,
+          headers: { "Content-Type": "text/html; charset=utf-8" }
+        });
+      }
 
       if (data.status === "configured" && data.reviewUrl) {
-        // Actualizar contador de forma segura
-        data.scans = (data.scans || 0) + 1;
+        // Incrementar contador de forma síncrona para evitar Error 1101
+        data.scans = (Number(data.scans) || 0) + 1;
         data.lastUsed = new Date().toISOString();
 
-        // Usar waitUntil para que el put no bloquee ni cause Error 1101
-        ctx.waitUntil(
-          env.DEVICES.put(code, JSON.stringify(data))
-        );
+        try {
+          await env.DEVICES.put(code, JSON.stringify(data));
+        } catch (putErr) {
+          console.error("KV put error:", putErr);
+          // Aunque falle el put, igual redirigimos
+        }
 
         return Response.redirect(data.reviewUrl, 302);
       }
 
+      // Existe pero no está configurado
       return new Response(notConfiguredPage(code), {
         status: 200,
         headers: { "Content-Type": "text/html; charset=utf-8" }
       });
+
     } catch (err) {
       console.error("Redirect error:", err);
       return new Response(errorPage(), {
@@ -142,7 +155,6 @@ async function handleAdmin(request, env, path) {
     });
   }
 
-  // Página para crear nuevo
   if (path === "/admin/new") {
     return new Response(newDevicePage(), {
       headers: { "Content-Type": "text/html; charset=utf-8" }
@@ -399,25 +411,34 @@ function notConfiguredPage(code) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Dispositivo pendiente</title>
+  <title>Dispositivo pendiente – Breto's Services</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
     body{font-family:system-ui,sans-serif;background:#0f172a;color:#f8fafc;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
-    .card{background:#1e293b;border-radius:16px;padding:40px 32px;max-width:420px;width:100%;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.3)}
-    .logo{max-width:200px;width:100%;margin-bottom:28px}
-    h1{font-size:1.35rem;margin-bottom:16px}
-    .code{font-size:1.75rem;font-weight:700;letter-spacing:3px;background:#0f172a;color:#38bdf8;padding:14px 24px;border-radius:10px;display:inline-block;margin:8px 0 20px}
-    p{color:#94a3b8;font-size:.95rem;line-height:1.5}
-    .footer{margin-top:28px;font-size:.8rem;color:#64748b}
+    .card{background:#1e293b;border-radius:16px;padding:40px 28px;max-width:420px;width:100%;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.3)}
+    .logo{max-width:180px;width:100%;margin-bottom:28px}
+    h1{font-size:1.4rem;font-weight:700;margin-bottom:12px;line-height:1.3}
+    .subtitle{color:#94a3b8;font-size:.95rem;line-height:1.5;margin-bottom:28px}
+    .code-label{font-size:.75rem;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
+    .code{font-size:1.8rem;font-weight:700;letter-spacing:3px;background:#0f172a;color:#38bdf8;padding:14px 24px;border-radius:10px;display:inline-block;margin-bottom:28px}
+    .owner-text{font-size:.9rem;color:#94a3b8;margin-bottom:16px}
+    .btn{display:inline-block;padding:14px 28px;background:#38bdf8;color:#0f172a;text-decoration:none;border-radius:10px;font-weight:600;font-size:1rem}
+    .footer{margin-top:32px;font-size:.8rem;color:#64748b}
   </style>
 </head>
 <body>
   <div class="card">
-    <img src="https://i.imgur.com/eHCpKk8.png" class="logo">
-    <h1>Dispositivo pendiente</h1>
+    <img src="https://i.imgur.com/eHCpKk8.png" class="logo" alt="Breto's Services">
+    <h1>Este dispositivo todavía no está configurado</h1>
+    <p class="subtitle">En cuanto su propietario lo configure, este enlace te llevará directamente a dejar una reseña en Google.</p>
+    
+    <div class="code-label">Código del producto</div>
     <div class="code">${code}</div>
-    <p>Este dispositivo aún no ha sido configurado.</p>
-    <p class="footer">Contacta a Breto's Services para activarlo</p>
+
+    <p class="owner-text">¿Eres el propietario de este dispositivo?</p>
+    <a href="/admin" class="btn">Configúralo desde tu panel</a>
+
+    <p class="footer">Breto's Services · Tarjetas de reseñas Google + NFC/QR</p>
   </div>
 </body>
 </html>`;
@@ -429,7 +450,7 @@ function errorPage() {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Error</title>
+  <title>Error – Breto's Services</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
     body{font-family:system-ui,sans-serif;background:#0f172a;color:#f8fafc;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
